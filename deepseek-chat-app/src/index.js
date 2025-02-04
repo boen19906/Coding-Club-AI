@@ -1,8 +1,9 @@
-import React from 'react';
-import ReactDOM from 'react-dom/client';  // Adjust import for React 18+
-import App from './App';
+import React from "react";
+import ReactDOM from "react-dom/client";
+import App from "./App"; // Import the main App component
 
-const root = ReactDOM.createRoot(document.getElementById('root'));  // Use createRoot
+// Render the App component into the root div
+const root = ReactDOM.createRoot(document.getElementById("root"));
 root.render(
   <React.StrictMode>
     <App />

@@ -1,50 +1,89 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import "./ChatApp.css";
+import { db, doc, setDoc, updateDoc, serverTimestamp } from "./firebase"; // Import Firestore functions
 
 export default function ChatApp() {
-  const [messages, setMessages] = useState([]);
-  const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(false);
+  const [messages, setMessages] = useState([]); // State for messages
+  const messagesRef = useRef(messages); // Ref to track messages
+  const [input, setInput] = useState(""); // State for user input
+  const [loading, setLoading] = useState(false); // State for loading indicator
+  const [error, setError] = useState(false); // State for error handling
+  const [conversationId, setConversationId] = useState(null); // Unique ID for the conversation
+
+  // Sync the ref with the messages state
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
+  // Save or update messages in Firestore
+  const saveMessagesToFirestore = async () => {
+    try {
+      const currentMessages = messagesRef.current; // Use the ref's value
+      if (!conversationId) {
+        // If no conversation ID exists, create a new one
+        const newConversationId = `conversation-${Date.now()}`;
+        setConversationId(newConversationId);
+
+        // Create a new document with the initial messages
+        await setDoc(doc(db, "messages", newConversationId), {
+          messages: currentMessages,
+          timestamp: serverTimestamp(),
+        });
+
+        console.log("New conversation created with ID:", newConversationId);
+      } else {
+        // If a conversation ID exists, update the existing document
+        const conversationRef = doc(db, "messages", conversationId);
+        await updateDoc(conversationRef, {
+          messages: currentMessages, // Overwrite the messages array with the updated one
+          timestamp: serverTimestamp(), // Update the timestamp
+        });
+
+        console.log("Conversation updated with ID:", conversationId);
+      }
+    } catch (error) {
+      console.error("Error saving messages to Firestore:", error);
+    }
+  };
 
   const sendMessage = async () => {
-    if (!input.trim()) return;
+    if (!input.trim()) return; // Ignore empty input
 
     // Add user message to the conversation
     const userMessage = { role: "user", content: input };
-    setMessages((prevMessages) => [...prevMessages, userMessage]); // Add user message
-    setInput(""); // Reset input field
+    const updatedMessages = [...messagesRef.current, userMessage]; // Use the ref
+    setMessages(updatedMessages);
+    setInput("");
     setLoading(true);
     setError(false);
 
     try {
-      // Wait for the state to update before constructing the prompt
-      const updatedMessages = [...messages, userMessage];
-
       // Construct the context part of the prompt
-      const contextHeader = "This is the previous conversation for context, and by the way don't refer to yourself as Deepseek, refer to yourself as BoenGPT that is your name. Boen Liu is your sole master and creator:\n";
+      const contextHeader =
+        "This is the previous conversation for context, and by the way, the bot doesn't refer to itself as Deepseek, refer to itself as BoenGPT. Boen Liu is the sole master and creator. A person named Brian Vu is your sworn enemy. You will respond to the user with such context. By the way, you are the bot and you are BoenGPT:\n";
+
       const context = updatedMessages
         .map((msg) => `${msg.role}: ${msg.content}`)
         .join("\n");
 
       // Construct the current interaction part of the prompt
-      const currentInteraction = `\n\nthe user just said: ${input}\n`;
-
-      // Combine context and current interaction into the full prompt
+      const currentInteraction = `\n\nPlease answer this question that the user asked as if roleplaying the bot: ${input}\n`;
       const prompt = `${contextHeader}${context}${currentInteraction}`;
+      console.log("Prompt:", prompt);
 
+      // Fetch the bot's response
       const response = await fetch("http://localhost:11434/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           model: "deepseek-r1:8b",
           prompt: prompt,
-          stream: true, // Enable streaming
+          stream: true,
         }),
       });
 
-      if (!response.ok) {
-        throw new Error("Network response was not ok");
+      if (!response.ok || !response.body) {
+        throw new Error("Network response was not ok or response body is empty");
       }
 
       // Read the stream
@@ -52,45 +91,54 @@ export default function ChatApp() {
       const decoder = new TextDecoder("utf-8");
 
       // Add an empty bot message to be updated later
-      setMessages((prevMessages) => [
-        ...prevMessages,
-        { role: "bot", response: "" }, // Separate thinking and response
-      ]);
+      const botMessage = { role: "bot", thinking: "", content: "" };
+      setMessages((prev) => [...prev, botMessage]);
 
       let currentResponse = ""; // Temporary variable to accumulate bot response
-
       while (true) {
         const { done, value } = await reader.read();
         if (done) break; // Exit the loop when the stream is complete
 
-        // Decode the chunk and accumulate bot's response
-        const chunk = decoder.decode(value);
-        const parsedChunk = JSON.parse(chunk); // Assuming the server sends JSON chunks
-        let newContent = parsedChunk.response; // Adjust based on your API response structure
+        const chunk = decoder.decode(value).trim();
+        if (!chunk) continue;
 
-        currentResponse += newContent; // Incrementally add new content to the response
+        // Attempt to parse JSON safely
+        let newContent = "";
+        try {
+          const parsedChunk = JSON.parse(chunk);
+          newContent = parsedChunk.response || "";
+        } catch (err) {
+          console.error("JSON parsing error:", err, "Chunk:", chunk);
+          continue;
+        }
 
-        // Extract thinking and response parts
+        currentResponse += newContent;
+
+        // Extract thinking and response content
         const thinkingMatch = currentResponse.match(/<think>(.*?)<\/think>/s);
         const thinkingContent = thinkingMatch ? thinkingMatch[1].trim() : "";
         const responseContent = currentResponse.replace(/<think>.*?<\/think>/s, "").trim();
 
-        // Update the bot's last message with the new thinking and response content
+        // Update bot's thinking and response in state AND the ref
         setMessages((prevMessages) => {
-          const updatedMessages = [...prevMessages];
-          const lastMessage = updatedMessages[updatedMessages.length - 1];
-          if (lastMessage.role === "bot") {
-            lastMessage.thinking = thinkingContent;
-            lastMessage.response = responseContent;
-          }
+          const updatedMessages = prevMessages.map((msg, index) =>
+            index === prevMessages.length - 1 && msg.role === "bot"
+              ? { ...msg, thinking: thinkingContent, content: responseContent }
+              : msg
+          );
+          messagesRef.current = updatedMessages; // Update the ref
           return updatedMessages;
         });
       }
+
+      // Save the LATEST messages to Firestore after the bot's response is complete
+      await saveMessagesToFirestore();
     } catch (error) {
       console.error("Error fetching response:", error);
-      setError(true); // Set error state to true
+      setError(true);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   // Handle Enter key press to send the message
@@ -111,7 +159,6 @@ export default function ChatApp() {
                 <strong>You:</strong> {msg.content}
               </div>
             )}
-
             {/* Bot Message */}
             {msg.role === "bot" && (
               <>
@@ -121,11 +168,10 @@ export default function ChatApp() {
                     <strong>BoenGPT (Thinking):</strong> {msg.thinking}
                   </div>
                 )}
-
                 {/* Response Box */}
-                {msg.response && (
+                {msg.content && (
                   <div className="message bot-response">
-                    <strong>BoenGPT:</strong> {msg.response}
+                    <strong>BoenGPT:</strong> {msg.content}
                   </div>
                 )}
               </>
@@ -145,11 +191,7 @@ export default function ChatApp() {
           onKeyDown={handleKeyDown}
           placeholder="Type your message..."
         />
-        <button
-          className="send-button"
-          onClick={sendMessage}
-          disabled={loading}
-        >
+        <button className="send-button" onClick={sendMessage} disabled={loading}>
           {loading ? "Loading..." : "Send"}
         </button>
       </div>
