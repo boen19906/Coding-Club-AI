@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import "./ChatApp.css";
 import { db, doc, setDoc, updateDoc, serverTimestamp } from "./firebase"; // Import Firestore functions
+import OpenAI from "openai"; // Import OpenAI SDK
 
 export default function ChatApp() {
   const [messages, setMessages] = useState([]); // State for messages
@@ -9,6 +10,17 @@ export default function ChatApp() {
   const [loading, setLoading] = useState(false); // State for loading indicator
   const [error, setError] = useState(false); // State for error handling
   const [conversationId, setConversationId] = useState(null); // Unique ID for the conversation
+  const [userName, setUserName] = useState(""); // State for user's name
+  const [opps, setOpps] = useState(""); // State for list of opps
+  const [hood, setHood] = useState(""); // State for hood name
+  const [chatStarted, setChatStarted] = useState(false); // State to track if chat has started
+
+  // Initialize OpenAI client with DeepSeek's API
+  const openai = new OpenAI({
+    baseURL: "https://api.deepseek.com", // DeepSeek's API endpoint
+    apiKey: "sk-2fe6222bedf54239871cf7f3946d1fa7", // Your DeepSeek API key
+    dangerouslyAllowBrowser: true, // Allow browser usage (required for client-side apps)
+  });
 
   // Sync the ref with the messages state
   useEffect(() => {
@@ -46,6 +58,70 @@ export default function ChatApp() {
     }
   };
 
+  // Handle form submission to start the chat
+  const startChat = (e) => {
+    e.preventDefault();
+    if (userName && opps && hood) {
+      setChatStarted(true);
+    } else {
+      alert("Please fill out all fields before starting the chat.");
+    }
+  };
+
+  // Send an initial message from the bot when the chat starts
+  useEffect(() => {
+    if (chatStarted) {
+      const sendInitialMessage = async () => {
+        setLoading(true);
+        setError(false);
+
+        try {
+          // Construct the initial prompt
+          const initialPrompt = `Yo, what's good? This is HoodGPT, reppin' ${hood}. You the boss, ${userName}, and I'm here to handle business. Them fools ${opps} better watch their backs. What you need, fam?`;
+
+          // Fetch the bot's response using OpenAI SDK with streaming
+          const stream = await openai.chat.completions.create({
+            messages: [{ role: "user", content: initialPrompt }],
+            model: "deepseek-chat", // Use the correct model name
+            stream: true, // Enable streaming
+          });
+
+          // Add an empty bot message to be updated later
+          const botMessage = { role: "bot", content: "" };
+          setMessages([botMessage]);
+
+          // Process the streamed response
+          let fullResponse = "";
+          for await (const chunk of stream) {
+            const chunkContent = chunk.choices[0]?.delta?.content || "";
+            fullResponse += chunkContent;
+
+            // Update the bot's response in real-time
+            setMessages((prevMessages) => {
+              const updatedMessages = prevMessages.map((msg, index) =>
+                index === prevMessages.length - 1 && msg.role === "bot"
+                  ? { ...msg, content: fullResponse }
+                  : msg
+              );
+              messagesRef.current = updatedMessages; // Update the ref
+              return updatedMessages;
+            });
+          }
+
+          // Save the updated messages to Firestore after the stream is complete
+          await saveMessagesToFirestore();
+        } catch (error) {
+          console.error("Error fetching initial response:", error);
+          setError(true);
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      sendInitialMessage();
+    }
+  }, [chatStarted]);
+
   const sendMessage = async () => {
     if (!input.trim()) return; // Ignore empty input
 
@@ -60,7 +136,13 @@ export default function ChatApp() {
     try {
       // Construct the context part of the prompt
       const contextHeader =
-        "This is the previous conversation for context, and by the way, the bot doesn't refer to itself as Deepseek, refer to itself as BoenGPT. Boen Liu is the sole master and creator. A person named Brian Vu is your sworn enemy. You will respond to the user with such context. By the way, you are the bot and you are BoenGPT:\n";
+        `This is the previous conversation for context, and by the way, the bot doesn't 
+        refer to itself as Deepseek, refer to itself as HoodGPT. ${userName} is the sole master 
+        and creator. People named ${opps} are your sworn enemies. 
+        You will respond to the user as if you are a Inner City hoodlum, talk like a hoodlum, 
+        HoodGPT is a hoodlum. Be rude, roleplay as a rude hoodlum. Your hood is ${hood}, 
+        that's where u operate. By the way, you are the bot 
+        and you are HoodGPT:\n`;
 
       const context = updatedMessages
         .map((msg) => `${msg.role}: ${msg.content}`)
@@ -71,59 +153,28 @@ export default function ChatApp() {
       const prompt = `${contextHeader}${context}${currentInteraction}`;
       console.log("Prompt:", prompt);
 
-      // Fetch the bot's response
-      const response = await fetch("http://localhost:11434/api/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "deepseek-r1:8b",
-          prompt: prompt,
-          stream: true,
-        }),
+      // Fetch the bot's response using OpenAI SDK with streaming
+      const stream = await openai.chat.completions.create({
+        messages: [{ role: "user", content: prompt }],
+        model: "deepseek-chat", // Use the correct model name
+        stream: true, // Enable streaming
       });
 
-      if (!response.ok || !response.body) {
-        throw new Error("Network response was not ok or response body is empty");
-      }
-
-      // Read the stream
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder("utf-8");
-
       // Add an empty bot message to be updated later
-      const botMessage = { role: "bot", thinking: "", content: "" };
+      const botMessage = { role: "bot", content: "" };
       setMessages((prev) => [...prev, botMessage]);
 
-      let currentResponse = ""; // Temporary variable to accumulate bot response
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break; // Exit the loop when the stream is complete
+      // Process the streamed response
+      let fullResponse = "";
+      for await (const chunk of stream) {
+        const chunkContent = chunk.choices[0]?.delta?.content || "";
+        fullResponse += chunkContent;
 
-        const chunk = decoder.decode(value).trim();
-        if (!chunk) continue;
-
-        // Attempt to parse JSON safely
-        let newContent = "";
-        try {
-          const parsedChunk = JSON.parse(chunk);
-          newContent = parsedChunk.response || "";
-        } catch (err) {
-          console.error("JSON parsing error:", err, "Chunk:", chunk);
-          continue;
-        }
-
-        currentResponse += newContent;
-
-        // Extract thinking and response content
-        const thinkingMatch = currentResponse.match(/<think>(.*?)<\/think>/s);
-        const thinkingContent = thinkingMatch ? thinkingMatch[1].trim() : "";
-        const responseContent = currentResponse.replace(/<think>.*?<\/think>/s, "").trim();
-
-        // Update bot's thinking and response in state AND the ref
+        // Update the bot's response in real-time
         setMessages((prevMessages) => {
           const updatedMessages = prevMessages.map((msg, index) =>
             index === prevMessages.length - 1 && msg.role === "bot"
-              ? { ...msg, thinking: thinkingContent, content: responseContent }
+              ? { ...msg, content: fullResponse }
               : msg
           );
           messagesRef.current = updatedMessages; // Update the ref
@@ -131,7 +182,7 @@ export default function ChatApp() {
         });
       }
 
-      // Save the LATEST messages to Firestore after the bot's response is complete
+      // Save the updated messages to Firestore after the stream is complete
       await saveMessagesToFirestore();
     } catch (error) {
       console.error("Error fetching response:", error);
@@ -150,51 +201,88 @@ export default function ChatApp() {
 
   return (
     <div className="chat-container">
-      <div className="messages-container">
-        {messages.map((msg, index) => (
-          <React.Fragment key={index}>
-            {/* User Message */}
-            {msg.role === "user" && (
-              <div className="message user-message">
-                <strong>You:</strong> {msg.content}
+      {/* Welcome message with GIF */}
+      <div className="welcome-message">
+        <h1>Welcome to HoodGPT!</h1>
+        <img src="/psycho.gif" alt="Psycho GIF" className="welcome-gif" />
+      </div>
+
+      {/* Input form for user name, opps, and hood */}
+      {!chatStarted && (
+        <div className="setup-form">
+          <h2>Set Up Your Hood</h2>
+          <form onSubmit={startChat}>
+            <input
+              type="text"
+              placeholder="What's Your Street Name?"
+              value={userName}
+              onChange={(e) => setUserName(e.target.value)}
+              required
+            />
+            <input
+              type="text"
+              placeholder="List Your Motherfuckin Opps (comma-separated)"
+              value={opps}
+              onChange={(e) => setOpps(e.target.value)}
+              required
+            />
+            <input
+              type="text"
+              placeholder="What's Your Hood"
+              value={hood}
+              onChange={(e) => setHood(e.target.value)}
+              required
+            />
+            <button type="submit">Start Chat</button>
+          </form>
+        </div>
+      )}
+
+      {/* Chat interface */}
+      {chatStarted && (
+        <>
+          <div className="messages-container">
+            {messages.map((msg, index) => (
+              <React.Fragment key={index}>
+                {/* User Message */}
+                {msg.role === "user" && (
+                  <div className="message user-message">
+                    <strong>You:</strong> {msg.content}
+                  </div>
+                )}
+                {/* Bot Message */}
+                {msg.role === "bot" && (
+                  <div className="message bot-message">
+                    <strong>HoodGPT:</strong> {msg.content}
+                  </div>
+                )}
+              </React.Fragment>
+            ))}
+            {/* Loading spinner */}
+            {loading && (
+              <div className="loading-spinner">
+                <div className="spinner"></div>
               </div>
             )}
-            {/* Bot Message */}
-            {msg.role === "bot" && (
-              <>
-                {/* Thinking Box */}
-                {msg.thinking && (
-                  <div className="message bot-thinking">
-                    <strong>BoenGPT (Thinking):</strong> {msg.thinking}
-                  </div>
-                )}
-                {/* Response Box */}
-                {msg.content && (
-                  <div className="message bot-response">
-                    <strong>BoenGPT:</strong> {msg.content}
-                  </div>
-                )}
-              </>
-            )}
-          </React.Fragment>
-        ))}
-      </div>
+          </div>
 
-      {/* Error message display */}
-      {error && <div className="error-message">Sorry, something went wrong. Please try again.</div>}
+          {/* Error message display */}
+          {error && <div className="error-message">Sorry, something went wrong. Please try again.</div>}
 
-      <div className="input-container">
-        <input
-          className="input-field"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="Type your message..."
-        />
-        <button className="send-button" onClick={sendMessage} disabled={loading}>
-          {loading ? "Loading..." : "Send"}
-        </button>
-      </div>
+          <div className="input-container">
+            <input
+              className="input-field"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Type your message..."
+            />
+            <button className="send-button" onClick={sendMessage} disabled={loading}>
+              {loading ? "Loading..." : "Send"}
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }
