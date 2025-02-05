@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import "./ChatApp.css";
 import { db, doc, setDoc, updateDoc, serverTimestamp } from "./firebase"; // Import Firestore functions
 import OpenAI from "openai"; // Import OpenAI SDK
@@ -28,35 +28,27 @@ export default function ChatApp() {
   }, [messages]);
 
   // Save or update messages in Firestore
-  const saveMessagesToFirestore = async () => {
+  const saveMessagesToFirestore = useCallback(async () => {
     try {
-      const currentMessages = messagesRef.current; // Use the ref's value
+      const currentMessages = messagesRef.current;
       if (!conversationId) {
-        // If no conversation ID exists, create a new one
         const newConversationId = `conversation-${Date.now()}`;
         setConversationId(newConversationId);
-
-        // Create a new document with the initial messages
         await setDoc(doc(db, "messages", newConversationId), {
           messages: currentMessages,
           timestamp: serverTimestamp(),
         });
-
-        console.log("New conversation created with ID:", newConversationId);
       } else {
-        // If a conversation ID exists, update the existing document
         const conversationRef = doc(db, "messages", conversationId);
         await updateDoc(conversationRef, {
-          messages: currentMessages, // Overwrite the messages array with the updated one
-          timestamp: serverTimestamp(), // Update the timestamp
+          messages: currentMessages,
+          timestamp: serverTimestamp(),
         });
-
-        console.log("Conversation updated with ID:", conversationId);
       }
     } catch (error) {
       console.error("Error saving messages to Firestore:", error);
     }
-  };
+  }, [conversationId]);
 
   // Handle form submission to start the chat
   const startChat = (e) => {
@@ -95,15 +87,15 @@ export default function ChatApp() {
           for await (const chunk of stream) {
             const chunkContent = chunk.choices[0]?.delta?.content || "";
             fullResponse += chunkContent;
-
-            // Update the bot's response in real-time
+          
+            // Use a callback to ensure the latest state is used
             setMessages((prevMessages) => {
               const updatedMessages = prevMessages.map((msg, index) =>
                 index === prevMessages.length - 1 && msg.role === "bot"
                   ? { ...msg, content: fullResponse }
                   : msg
               );
-              messagesRef.current = updatedMessages; // Update the ref
+              messagesRef.current = updatedMessages;
               return updatedMessages;
             });
           }
@@ -120,7 +112,7 @@ export default function ChatApp() {
 
       sendInitialMessage();
     }
-  }, [chatStarted]);
+  }, [chatStarted, hood, userName, opps, openai.chat.completions, saveMessagesToFirestore]);
 
   const sendMessage = async () => {
     if (!input.trim()) return; // Ignore empty input
@@ -169,15 +161,15 @@ export default function ChatApp() {
       for await (const chunk of stream) {
         const chunkContent = chunk.choices[0]?.delta?.content || "";
         fullResponse += chunkContent;
-
-        // Update the bot's response in real-time
+      
+        // Use a callback to ensure the latest state is used
         setMessages((prevMessages) => {
           const updatedMessages = prevMessages.map((msg, index) =>
             index === prevMessages.length - 1 && msg.role === "bot"
               ? { ...msg, content: fullResponse }
               : msg
           );
-          messagesRef.current = updatedMessages; // Update the ref
+          messagesRef.current = updatedMessages;
           return updatedMessages;
         });
       }
