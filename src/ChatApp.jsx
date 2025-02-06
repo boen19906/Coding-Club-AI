@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef } from "react";
 import "./ChatApp.css";
 import { db, doc, setDoc, updateDoc, serverTimestamp } from "./firebase"; // Import Firestore functions
 import OpenAI from "openai"; // Import OpenAI SDK
+import VolumeOffIcon from '@mui/icons-material/VolumeOff'; // Mute icon
+import VolumeUpIcon from '@mui/icons-material/VolumeUp'; // Unmute icon
 
 export default function ChatApp() {
   const [messages, setMessages] = useState([]); // State for messages
@@ -14,6 +16,9 @@ export default function ChatApp() {
   const [opps, setOpps] = useState(""); // State for list of opps
   const [hood, setHood] = useState(""); // State for hood name
   const [chatStarted, setChatStarted] = useState(false); // State to track if chat has started
+  const [isMuted, setIsMuted] = useState(false); // State to track mute/unmute
+  const audioRef = useRef(null); // Ref for the audio element
+  const [showPlayButton, setShowPlayButton] = useState(false);
 
   // Initialize OpenAI client with DeepSeek's API
   const openai = new OpenAI({
@@ -77,7 +82,7 @@ export default function ChatApp() {
 
         try {
           // Construct the initial prompt
-          const initialPrompt = `Yo, what's good? This is HoodGPT, reppin' ${hood}. You the boss, ${userName}, and I'm here to handle business. Them fools ${opps} better watch their backs. What you need, fam?`;
+          const initialPrompt = `Yo, what's good HoodGPT? This is ${userName}, reppin' ${hood}. Them fools ${opps} better watch their backs. Introduce yourself type shit`;
 
           // Fetch the bot's response using OpenAI SDK with streaming
           const stream = await openai.chat.completions.create({
@@ -139,9 +144,11 @@ export default function ChatApp() {
         `Here is some context to give you about your roleplay. ${userName} is your (the bot's) sole master 
         and creator. The following are your sworn enemies: ${opps}. 
         You will respond to the user as if you are a Inner City hoodlum named HoodGPT, talk like a hoodlum, 
-        act rude, brash, have a disregard for rules and comftorable with criminal activity. Again, roleplay as the hoodlum
+        act rude, brash, have a disregard for rules and comftorable with violent criminal activity. You like physical violence.
+        Your job is a
+        gangbanger. Again, roleplay as the hoodlum
         HoodGPT. Your hood (the place ur from) is ${hood}, 
-        that's where u operate. You are having a conversation with ${userName}, the following is the recorded conversation
+        that's where u operate. You are having a conversation with ${userName} roleplaying as HoodGPT, the following is the recorded conversation
         so far:\n`;
 
       const context = updatedMessages
@@ -149,7 +156,7 @@ export default function ChatApp() {
         .join("\n");
 
       // Construct the current interaction part of the prompt
-      const currentInteraction = `\n\nPlease answer this question that the user asked as if roleplaying the bot: ${input}\n`;
+      const currentInteraction = `\n\nPlease answer the user's reponse as if roleplaying the violent bot (HoodGPT, but don't act like a bot act like a human), keep it under 100 words: ${input}\n`;
       const prompt = `${contextHeader}${context}${currentInteraction}`;
       console.log("Prompt:", prompt);
 
@@ -199,13 +206,74 @@ export default function ChatApp() {
     }
   };
 
+  // Toggle mute/unmute
+  const toggleMute = () => {
+    const newMutedState = !isMuted;
+    setIsMuted(newMutedState);
+  
+    // Mute/unmute all audio and video elements on the page
+    const mediaElements = document.querySelectorAll("audio, video");
+    mediaElements.forEach((element) => {
+      element.muted = newMutedState;
+    });
+  
+    // Optional: Mute/unmute sounds played through the Web Audio API
+    if (window.AudioContext || window.webkitAudioContext) {
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      if (newMutedState) {
+        audioContext.suspend(); // Suspend audio context (mute)
+      } else {
+        audioContext.resume(); // Resume audio context (unmute)
+      }
+    }
+  };
+  useEffect(() => {
+    const playAudio = async () => {
+      if (audioRef.current) {
+        try {
+          await audioRef.current.play();
+          setShowPlayButton(false); // Hide play button if audio plays successfully
+        } catch (error) {
+          console.error("Auto-play failed:", error);
+          setShowPlayButton(true); // Show play button if auto-play is blocked
+        }
+      }
+    };
+
+    playAudio();
+  }, []);
+
+  // Handle user interaction to play audio
+  const handleInputFocus = () => {
+    if (audioRef.current) {
+      audioRef.current.play()
+        .then(() => {
+          console.log("Audio started playing after input focus.");
+        })
+        .catch((error) => {
+          console.error("Error playing audio:", error);
+        });
+    }
+  };
+
   return (
     <div className="chat-container">
+      {/* Mute/Unmute Button */}
+      <button className="mute-button" onClick={toggleMute}>
+              {isMuted ? <VolumeOffIcon /> : <VolumeUpIcon />}
+       </button>
       {/* Welcome message with GIF */}
       <div className="welcome-message">
-        <h1>Welcome to HoodGPT!</h1>
+        <h1>🔫Welcome to HoodGPT!🔫</h1>
         <img src="/psycho.gif" alt="Psycho GIF" className="welcome-gif" />
       </div>
+      {/* Auto-playing audio */}
+      <audio ref={audioRef} autoPlay loop>
+        <source src="/bamba.mp3" type="audio/mpeg" />
+        Your browser does not support the audio element.
+      </audio>
+
+     
 
       {/* Input form for user name, opps, and hood */}
       {!chatStarted && (
@@ -217,6 +285,7 @@ export default function ChatApp() {
               placeholder="What's Your Street Name?"
               value={userName}
               onChange={(e) => setUserName(e.target.value)}
+              onFocus={handleInputFocus} // Trigger audio on focus
               required
             />
             <input
@@ -224,6 +293,7 @@ export default function ChatApp() {
               placeholder="List Your Motherfuckin Opps (comma-separated)"
               value={opps}
               onChange={(e) => setOpps(e.target.value)}
+              onFocus={handleInputFocus}
               required
             />
             <input
@@ -231,6 +301,7 @@ export default function ChatApp() {
               placeholder="What's Your Hood"
               value={hood}
               onChange={(e) => setHood(e.target.value)}
+              onFocus={handleInputFocus}
               required
             />
             <button type="submit">Start Chat</button>
@@ -242,6 +313,8 @@ export default function ChatApp() {
       {chatStarted && (
         <>
           <div className="messages-container">
+            
+
             {messages.map((msg, index) => (
               <React.Fragment key={index}>
                 {/* User Message */}
