@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import "./ChatApp.css";
 import { db, doc, setDoc, updateDoc, serverTimestamp } from "./firebase"; // Import Firestore functions
 import OpenAI from "openai"; // Import OpenAI SDK
@@ -28,27 +28,35 @@ export default function ChatApp() {
   }, [messages]);
 
   // Save or update messages in Firestore
-  const saveMessagesToFirestore = useCallback(async () => {
+  const saveMessagesToFirestore = async () => {
     try {
-      const currentMessages = messagesRef.current;
+      const currentMessages = messagesRef.current; // Use the ref's value
       if (!conversationId) {
+        // If no conversation ID exists, create a new one
         const newConversationId = `conversation-${Date.now()}`;
         setConversationId(newConversationId);
+
+        // Create a new document with the initial messages
         await setDoc(doc(db, "messages", newConversationId), {
           messages: currentMessages,
           timestamp: serverTimestamp(),
         });
+
+        console.log("New conversation created with ID:", newConversationId);
       } else {
+        // If a conversation ID exists, update the existing document
         const conversationRef = doc(db, "messages", conversationId);
         await updateDoc(conversationRef, {
-          messages: currentMessages,
-          timestamp: serverTimestamp(),
+          messages: currentMessages, // Overwrite the messages array with the updated one
+          timestamp: serverTimestamp(), // Update the timestamp
         });
+
+        console.log("Conversation updated with ID:", conversationId);
       }
     } catch (error) {
       console.error("Error saving messages to Firestore:", error);
     }
-  }, [conversationId]);
+  };
 
   // Handle form submission to start the chat
   const startChat = (e) => {
@@ -87,15 +95,15 @@ export default function ChatApp() {
           for await (const chunk of stream) {
             const chunkContent = chunk.choices[0]?.delta?.content || "";
             fullResponse += chunkContent;
-          
-            // Use a callback to ensure the latest state is used
+
+            // Update the bot's response in real-time
             setMessages((prevMessages) => {
               const updatedMessages = prevMessages.map((msg, index) =>
                 index === prevMessages.length - 1 && msg.role === "bot"
                   ? { ...msg, content: fullResponse }
                   : msg
               );
-              messagesRef.current = updatedMessages;
+              messagesRef.current = updatedMessages; // Update the ref
               return updatedMessages;
             });
           }
@@ -112,7 +120,7 @@ export default function ChatApp() {
 
       sendInitialMessage();
     }
-  }, [chatStarted, hood, userName, opps, openai.chat.completions, saveMessagesToFirestore]);
+  }, [chatStarted]);
 
   const sendMessage = async () => {
     if (!input.trim()) return; // Ignore empty input
@@ -128,13 +136,13 @@ export default function ChatApp() {
     try {
       // Construct the context part of the prompt
       const contextHeader =
-        `This is the previous conversation for context, and by the way, the bot doesn't 
-        refer to itself as Deepseek, refer to itself as HoodGPT. ${userName} is the sole master 
-        and creator. People named ${opps} are your sworn enemies. 
-        You will respond to the user as if you are a Inner City hoodlum, talk like a hoodlum, 
-        HoodGPT is a hoodlum. Be rude, roleplay as a rude hoodlum. Your hood is ${hood}, 
-        that's where u operate. By the way, you are the bot 
-        and you are HoodGPT:\n`;
+        `Here is some context to give you about your roleplay. ${userName} is your (the bot's) sole master 
+        and creator. The following are your sworn enemies: ${opps}. 
+        You will respond to the user as if you are a Inner City hoodlum named HoodGPT, talk like a hoodlum, 
+        act rude, brash, have a disregard for rules and comftorable with criminal activity. Again, roleplay as the hoodlum
+        HoodGPT. Your hood (the place ur from) is ${hood}, 
+        that's where u operate. You are having a conversation with ${userName}, the following is the recorded conversation
+        so far:\n`;
 
       const context = updatedMessages
         .map((msg) => `${msg.role}: ${msg.content}`)
@@ -161,15 +169,15 @@ export default function ChatApp() {
       for await (const chunk of stream) {
         const chunkContent = chunk.choices[0]?.delta?.content || "";
         fullResponse += chunkContent;
-      
-        // Use a callback to ensure the latest state is used
+
+        // Update the bot's response in real-time
         setMessages((prevMessages) => {
           const updatedMessages = prevMessages.map((msg, index) =>
             index === prevMessages.length - 1 && msg.role === "bot"
               ? { ...msg, content: fullResponse }
               : msg
           );
-          messagesRef.current = updatedMessages;
+          messagesRef.current = updatedMessages; // Update the ref
           return updatedMessages;
         });
       }
