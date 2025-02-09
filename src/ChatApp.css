@@ -1,7 +1,7 @@
 .chat-container {
   display: flex;
   flex-direction: column;
-  height: 95vh;
+  height: 100vh;
   padding: 1rem;
   background-color: #0a0a0a; /* Darker background for a gritty feel */
   font-family: 'Oswald', sans-serif;
@@ -9,12 +9,13 @@
 
 .welcome-message {
   display: flex;
+  position: relative;
   align-items: center;
   justify-content: center;
-  margin-bottom: 5vh;
+  margin-bottom: 3vh;
   text-align: center;
   background: linear-gradient(135deg, #8b0000, #4b0082); /* Blood red to deep purple gradient */
-  padding: 2rem;
+  padding: 1rem;
   border-radius: 4vw;
   box-shadow: 0 6px 12px rgba(0, 0, 0, 0.6); /* Deeper, more dramatic shadow */
   color: #b8860b; /* Gold text for a luxurious touch */
@@ -49,6 +50,7 @@
   font-size: 1.8rem;
   color: #b8860b; /* Gold accent for headings */
   text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+  margin-top:0rem;
 }
 
 .setup-form input {
@@ -148,6 +150,10 @@
 
 .input-container {
   display: flex;
+  flex-wrap: wrap; /* Allows wrapping */
+  justify-content: center; /* Centers items horizontally */
+  align-items: center; /* Aligns items vertically */
+  text-align: center; /* Ensures text inside elements is centered */
   gap: 1.5rem;
   padding: 1.5rem;
   background-color: #1a1a1a; /* Dark background for input container */
@@ -155,6 +161,8 @@
   box-shadow: 0 6px 12px rgba(0, 0, 0, 0.6);
   border: 2px solid #8b0000; /* Blood red border */
 }
+
+
 
 .input-field {
   flex-grow: 1;
@@ -164,6 +172,7 @@
   font-size: 1.2rem;
   color: white;
   background-color: #333;
+  
 }
 
 .input-field:focus {
@@ -183,6 +192,7 @@
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.4);
 }
 
+
 .send-button:hover {
   background-color: #4b0082; /* Deep purple on hover */
   box-shadow: 0 6px 12px rgba(0, 0, 0, 0.6);
@@ -194,7 +204,7 @@
 }
 
 .error-message {
-  color: #e53e3e;
+  color: #e9e1e1;
   background-color: #f44336;
   padding: 1rem;
   border-radius: 12px;
@@ -227,8 +237,8 @@
 
 .mute-button {
   position: absolute;
-  top: 10px;
-  right: 10px;
+  top: 2vh;
+  right: 2vw;
   background: none;
   border: none;
   cursor: pointer;
@@ -237,6 +247,132 @@
   z-index: 1000;
 }
 
+
 .mute-button:hover {
   opacity: 0.8;
+}
+
+/* Dynamic adjustments for different devices */
+
+/* For phones (up to 600px) */
+@media only screen and (max-width: 600px) {
+  .welcome-message {
+    font-size: 0.7rem; /* Smaller font size for phones */
+    padding: 1rem; /* Less padding for smaller screens */
+    border-radius: 8px; /* Smaller border radius */
+  }
+
+  .welcome-gif {
+    width: 15vw; /* Smaller GIF for phones */
+  }
+
+  .setup-form {
+    padding: 1rem; /* Less padding for smaller screens */
+  }
+
+  .setup-form h2 {
+    text-align: center;
+    font-size: 1.5rem; /* Smaller heading font size */
+  }
+
+  .setup-form input {
+    font-size: 1.0rem; /* Smaller input font size */
+    text-align: center;
+  }
+
+  .setup-form button {
+    font-size: 1.5rem; /* Smaller button font size */
+  }
+
+  .message {
+    font-size: 1.0rem; /* Smaller message font size */
+  }
+
+  .input-field {
+    font-size: 1.0rem; /* Smaller input field font size */
+    text-align: center;
+  }
+
+  .send-button {
+    font-size: 1.0rem; /* Smaller send button font size */
+  }
+  .mute-button {
+    top: 0vh;
+    right: 1vw;
+  }
+
+  .responsive-icon {
+    font-size: 32px; /* Small devices */
+  }
+}
+
+/* For tablets (601px to 900px) */
+@media only screen and (min-width: 601px) and (max-width: 900px) {
+  .welcome-message {
+    font-size: 1.5rem; /* Medium font size for tablets */
+  }
+
+  .welcome-gif {
+    width: 18vw; /* Medium GIF size for tablets */
+  }
+
+  .setup-form h2 {
+    font-size: 2.2rem; /* Medium heading font size */
+  }
+
+  .setup-form input {
+    font-size: 1.5rem; /* Medium input font size */
+  }
+
+  .setup-form button {
+    font-size: 1.5rem; /* Medium button font size */
+  }
+
+  .message {
+    font-size: 1.5rem; /* Medium message font size */
+  }
+
+  .input-field {
+    font-size: 1.5rem; /* Medium input field font size */
+    text-align: center;
+  }
+
+  .send-button {
+    font-size: 1.5rem; /* Medium send button font size */
+  }
+}
+
+/* For desktops (901px and above) */
+@media only screen and (min-width: 901px) {
+  .welcome-message {
+    font-size: 2.0rem; /* Larger font size for desktops */
+  }
+
+  .welcome-gif {
+    width: 10vw; /* Larger GIF size for desktops */
+  }
+
+  .setup-form h2 {
+    font-size: 2.2rem; /* Larger heading font size */
+  }
+
+  .setup-form input {
+    font-size: 1.5rem; /* Larger input font size */
+  }
+
+  .setup-form button {
+    font-size: 1.5rem; /* Larger button font size */
+  }
+
+  .message {
+    font-size: 1.5rem; /* Larger message font size */
+  }
+
+  .input-field {
+    font-size: 1.5rem; /* Larger input field font size */
+  }
+
+  .send-button {
+    font-size: 1.5rem; /* Larger send button font size */
+  }
 }

@@ -19,6 +19,11 @@ export default function ChatApp() {
   const [isMuted, setIsMuted] = useState(false); // State to track mute/unmute
   const audioRef = useRef(null); // Ref for the audio element
   const [showPlayButton, setShowPlayButton] = useState(false);
+  const [abortController, setAbortController] = useState(null); // State for AbortController
+  const timeoutIdRef = useRef(null); // Ref to track the timeout ID
+
+  // Ref for the messages container
+  const messagesContainerRef = useRef(null);
 
   // Initialize OpenAI client with DeepSeek's API
   const openai = new OpenAI({
@@ -30,6 +35,13 @@ export default function ChatApp() {
   // Sync the ref with the messages state
   useEffect(() => {
     messagesRef.current = messages;
+  }, [messages]);
+
+  // Autoscroll to the bottom when messages change
+  useEffect(() => {
+    if (messagesContainerRef.current) {
+      messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+    }
   }, [messages]);
 
   // Save or update messages in Firestore
@@ -80,16 +92,27 @@ export default function ChatApp() {
         setLoading(true);
         setError(false);
 
+        const controller = new AbortController();
+        setAbortController(controller);
+
+        // Set a timeout for the initial message
+        timeoutIdRef.current = setTimeout(() => {
+          controller.abort();
+          setError(true);
+          setLoading(false);
+          alert("Server is busy. Please try again later.");
+        }, 120000); // 120 seconds timeout
+
         try {
           // Construct the initial prompt
-          const initialPrompt = `Yo, what's good HoodGPT? This is ${userName}, reppin' ${hood}. Them fools ${opps} better watch their backs. Introduce yourself type shit`;
+          const initialPrompt = `Yo, what's good HoodGPT? This is ${userName}, reppin' ${hood}. Them fools ${opps} better watch their backs. Introduce yourself (keep it under 50 words)`;
 
           // Fetch the bot's response using OpenAI SDK with streaming
           const stream = await openai.chat.completions.create({
             messages: [{ role: "user", content: initialPrompt }],
             model: "deepseek-chat", // Use the correct model name
             stream: true, // Enable streaming
-          });
+          }, { signal: controller.signal });
 
           // Add an empty bot message to be updated later
           const botMessage = { role: "bot", content: "" };
@@ -116,10 +139,16 @@ export default function ChatApp() {
           // Save the updated messages to Firestore after the stream is complete
           await saveMessagesToFirestore();
         } catch (error) {
-          console.error("Error fetching initial response:", error);
-          setError(true);
+          if (error.name === 'AbortError') {
+            console.log('Request aborted due to timeout or user action');
+          } else {
+            console.error("Error fetching initial response:", error);
+            setError(true);
+          }
         } finally {
+          clearTimeout(timeoutIdRef.current); // Clear the timeout
           setLoading(false);
+          setAbortController(null);
         }
       };
 
@@ -137,6 +166,17 @@ export default function ChatApp() {
     setInput("");
     setLoading(true);
     setError(false);
+
+    const controller = new AbortController();
+    setAbortController(controller);
+
+    // Set a timeout for the request
+    timeoutIdRef.current = setTimeout(() => {
+      controller.abort();
+      setError(true);
+      setLoading(false);
+      alert("Server is busy. Please try again later.");
+    }, 60000); // 10 seconds timeout
 
     try {
       // Construct the context part of the prompt
@@ -156,7 +196,7 @@ export default function ChatApp() {
         .join("\n");
 
       // Construct the current interaction part of the prompt
-      const currentInteraction = `\n\nPlease answer the user's reponse as if roleplaying the violent bot (HoodGPT, but don't act like a bot act like a human), keep it under 100 words: ${input}\n`;
+      const currentInteraction = `\n\nPlease answer the user's reponse as if roleplaying the violent bot (HoodGPT, but don't act like a bot act like a human), keep it under 50 words and don't use quotes: ${input}\n`;
       const prompt = `${contextHeader}${context}${currentInteraction}`;
       console.log("Prompt:", prompt);
 
@@ -165,7 +205,7 @@ export default function ChatApp() {
         messages: [{ role: "user", content: prompt }],
         model: "deepseek-chat", // Use the correct model name
         stream: true, // Enable streaming
-      });
+      }, { signal: controller.signal });
 
       // Add an empty bot message to be updated later
       const botMessage = { role: "bot", content: "" };
@@ -192,10 +232,16 @@ export default function ChatApp() {
       // Save the updated messages to Firestore after the stream is complete
       await saveMessagesToFirestore();
     } catch (error) {
-      console.error("Error fetching response:", error);
-      setError(true);
+      if (error.name === 'AbortError') {
+        console.log('Request aborted due to timeout or user action');
+      } else {
+        console.error("Error fetching response:", error);
+        setError(true);
+      }
     } finally {
+      clearTimeout(timeoutIdRef.current); // Clear the timeout
       setLoading(false);
+      setAbortController(null);
     }
   };
 
@@ -210,13 +256,13 @@ export default function ChatApp() {
   const toggleMute = () => {
     const newMutedState = !isMuted;
     setIsMuted(newMutedState);
-  
+
     // Mute/unmute all audio and video elements on the page
     const mediaElements = document.querySelectorAll("audio, video");
     mediaElements.forEach((element) => {
       element.muted = newMutedState;
     });
-  
+
     // Optional: Mute/unmute sounds played through the Web Audio API
     if (window.AudioContext || window.webkitAudioContext) {
       const audioContext = new (window.AudioContext || window.webkitAudioContext)();
@@ -227,10 +273,12 @@ export default function ChatApp() {
       }
     }
   };
+
   useEffect(() => {
     const playAudio = async () => {
       if (audioRef.current) {
         try {
+          audioRef.current.volume = 0.1; // Set volume to 10%
           await audioRef.current.play();
           setShowPlayButton(false); // Hide play button if audio plays successfully
         } catch (error) {
@@ -239,9 +287,10 @@ export default function ChatApp() {
         }
       }
     };
-
+  
     playAudio();
   }, []);
+  
 
   // Handle user interaction to play audio
   const handleInputFocus = () => {
@@ -256,24 +305,32 @@ export default function ChatApp() {
     }
   };
 
+  // Stop generating the response
+  const stopGenerating = () => {
+    if (abortController) {
+      abortController.abort();
+      setLoading(false);
+      setAbortController(null);
+    }
+  };
+
   return (
     <div className="chat-container">
       {/* Mute/Unmute Button */}
-      <button className="mute-button" onClick={toggleMute}>
-              {isMuted ? <VolumeOffIcon /> : <VolumeUpIcon />}
-       </button>
+      
+
       {/* Welcome message with GIF */}
       <div className="welcome-message">
+        <button className="mute-button" onClick={toggleMute}>
+          {isMuted ? (
+            <VolumeOffIcon className="responsive-icon" />
+          ) : (
+            <VolumeUpIcon className="responsive-icon" />
+          )}
+        </button>
         <h1>🔫Welcome to HoodGPT!🔫</h1>
         <img src="/psycho.gif" alt="Psycho GIF" className="welcome-gif" />
       </div>
-      {/* Auto-playing audio */}
-      <audio ref={audioRef} autoPlay loop>
-        <source src="/bamba.mp3" type="audio/mpeg" />
-        Your browser does not support the audio element.
-      </audio>
-
-     
 
       {/* Input form for user name, opps, and hood */}
       {!chatStarted && (
@@ -282,7 +339,7 @@ export default function ChatApp() {
           <form onSubmit={startChat}>
             <input
               type="text"
-              placeholder="What's Your Street Name?"
+              placeholder="Street Name"
               value={userName}
               onChange={(e) => setUserName(e.target.value)}
               onFocus={handleInputFocus} // Trigger audio on focus
@@ -290,7 +347,7 @@ export default function ChatApp() {
             />
             <input
               type="text"
-              placeholder="List Your Motherfuckin Opps (comma-separated)"
+              placeholder="Drop the Opps List"
               value={opps}
               onChange={(e) => setOpps(e.target.value)}
               onFocus={handleInputFocus}
@@ -298,7 +355,7 @@ export default function ChatApp() {
             />
             <input
               type="text"
-              placeholder="What's Your Hood"
+              placeholder="Your Hood"
               value={hood}
               onChange={(e) => setHood(e.target.value)}
               onFocus={handleInputFocus}
@@ -308,13 +365,16 @@ export default function ChatApp() {
           </form>
         </div>
       )}
+       {/* Auto-playing audio */}
+       <audio ref={audioRef} autoPlay loop>
+        <source src="/hood.mp3" type="audio/mpeg" />
+        Your browser does not support the audio element.
+      </audio>
 
       {/* Chat interface */}
       {chatStarted && (
         <>
-          <div className="messages-container">
-            
-
+          <div className="messages-container" ref={messagesContainerRef}>
             {messages.map((msg, index) => (
               <React.Fragment key={index}>
                 {/* User Message */}
@@ -350,9 +410,14 @@ export default function ChatApp() {
               onKeyDown={handleKeyDown}
               placeholder="Type your message..."
             />
-            <button className="send-button" onClick={sendMessage} disabled={loading}>
-              {loading ? "Loading..." : "Send"}
+            <button
+            className={"send-button"}
+            onClick={loading ? stopGenerating : sendMessage}
+            disabled={!loading && !input.trim()}
+            >
+              {loading ? "Stop" : "Send"}
             </button>
+
           </div>
         </>
       )}
