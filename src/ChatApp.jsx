@@ -28,7 +28,7 @@ export default function ChatApp() {
   // Initialize OpenAI client with DeepSeek's API
   const openai = new OpenAI({
     baseURL: "https://api.deepseek.com", // DeepSeek's API endpoint
-    apiKey: "sk-2fe6222bedf54239871cf7f3946d1fa7", // Your DeepSeek API key
+    apiKey: "", // Use Your DeepSeek API key
     dangerouslyAllowBrowser: true, // Allow browser usage (required for client-side apps)
   });
 
